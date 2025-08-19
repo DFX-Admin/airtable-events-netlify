@@ -3,7 +3,6 @@
   publish = "public"
   command = "echo build skipped"
 
-# CORS for the function responses
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
