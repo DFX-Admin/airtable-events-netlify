@@ -1,6 +1,6 @@
 // netlify/functions/airtable-events.js
 const handler = async (event) => {
-  // CORS preflight
+  // Handle CORS preflight
   if (event.httpMethod === 'OPTIONS') {
     return {
       statusCode: 204,
@@ -8,17 +8,7 @@ const handler = async (event) => {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': '*',
-        'Vary': 'Origin',
       }
-    };
-  }
-
-  // Only GET
-  if (event.httpMethod !== 'GET') {
-    return {
-      statusCode: 405,
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: 'Method Not Allowed'
     };
   }
 
@@ -26,31 +16,29 @@ const handler = async (event) => {
   const baseId = process.env.AIRTABLE_BASE_ID;
   const table  = process.env.AIRTABLE_TABLE || 'Events';
   const view   = process.env.AIRTABLE_VIEW  || 'LiveUpcoming';
+
   if (!token || !baseId) {
     return {
       statusCode: 500,
-      headers: { 'Access-Control-Allow-Origin': '*' },
       body: 'Missing env vars AIRTABLE_TOKEN or AIRTABLE_BASE_ID'
     };
   }
 
-  // Build Airtable request
+  // Build Airtable query
   const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
   if (view) url.searchParams.set('view', view);
   url.searchParams.set('pageSize', '50');
 
-  // NOTE: include BannerMobile; keep other fields
-  ['Name','Banner','BannerMobile','EventDate','Live','Link','CTA']
+  // Request both Banner and BannerMobile
+  ['Name','Banner','BannerMobile','EventDate','Live','Link']
     .forEach(f => url.searchParams.append('fields[]', f));
 
   try {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
     if (!res.ok) {
-      return {
-        statusCode: res.status,
-        headers: { 'Access-Control-Allow-Origin': '*' },
-        body: await res.text()
-      };
+      return { statusCode: res.status, body: await res.text() };
     }
 
     const data = await res.json();
@@ -72,26 +60,21 @@ const handler = async (event) => {
           ? (attBannerMobile.thumbnails?.large?.url || attBannerMobile.url)
           : '';
 
-        const dateStr = f.EventDate || '';
-        const ts = dateStr ? new Date(dateStr).getTime() : NaN;
-
         return {
           id: r.id,
           name: f.Name || '',
           banner: bannerUrl,
           bannerMobile: bannerMobileUrl,
-          eventDate: dateStr,
+          eventDate: f.EventDate || '',
           live: !!f.Live,
-          link: f.Link || '',
-          cta: f.CTA || ''
+          link: f.Link || ''
         };
       })
-      // ✅ allow records that have *either* banner or bannerMobile
+      // ✅ require either Banner or BannerMobile, plus future EventDate
       .filter(it =>
         it.live &&
         (it.banner || it.bannerMobile) &&
         it.eventDate &&
-        !Number.isNaN(new Date(it.eventDate).getTime()) &&
         new Date(it.eventDate).getTime() >= now
       )
       .sort((a,b) => new Date(a.eventDate) - new Date(b.eventDate));
@@ -102,15 +85,13 @@ const handler = async (event) => {
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
         'Access-Control-Allow-Origin': '*',
-        'Vary': 'Origin',
       },
       body: JSON.stringify({ items })
     };
   } catch (e) {
     return {
       statusCode: 500,
-      headers: { 'Access-Control-Allow-Origin': '*' },
-      body: e?.message || 'Error'
+      body: e.message || 'Error'
     };
   }
 };
